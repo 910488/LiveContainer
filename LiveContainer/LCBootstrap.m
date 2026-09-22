@@ -294,6 +294,35 @@ static void *getAppEntryPoint(void *handle) {
     return (void *)header + entryoff;
 }
 
+extern bool visionOSRelaunching;
+
+// visionOS never gives a window to the process it starts for [LCSharedUtils launchToGuestApp], because the
+// scene of the killed process is already gone, and it keeps this process alive once the user closes the
+// guest app's window, which would bring the next launch of LiveContainer back to this guest app.
+static void setUpGuestWindowHandlingOnVisionOS(void) {
+    if (@available(iOS 26.1, *)) {
+        if (!NSProcessInfo.processInfo.isiOSAppOnVision) return;
+    } else {
+        return;
+    }
+
+    [NSNotificationCenter.defaultCenter addObserverForName:@"UISceneDidDisconnectNotification" object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification) {
+        UIApplication *application = [NSClassFromString(@"UIApplication") sharedApplication];
+        if (!visionOSRelaunching && !application.connectedScenes.count) {
+            exit(0);
+        }
+    }];
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIApplication *application = [NSClassFromString(@"UIApplication") sharedApplication];
+            if (!application.connectedScenes.count) {
+                [[NSClassFromString(@"LSApplicationWorkspace") defaultWorkspace] openApplicationWithBundleID:lcMainBundle.bundleIdentifier];
+            }
+        });
+    });
+}
+
 static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContainer, int argc, char *argv[]) {
     NSString *appError = nil;
     if([[lcUserDefaults objectForKey:@"LCWaitForDebugger"] boolValue]) {
@@ -681,6 +710,10 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
         NSLog(@"[LCBootstrap] %@", appError);
         *path = oldPath;
         return appError;
+    }
+
+    if (!isLiveProcess) {
+        setUpGuestWindowHandlingOnVisionOS();
     }
 
     // Go!

@@ -120,6 +120,35 @@ extern NSBundle *lcMainBundle;
     return [nud objectForKey:@"LCCertificatePassword"];
 }
 
+// visionOS drops the url an app opens for itself right before it dies, so it never comes back. It also
+// keeps the process alive after its window is closed, so close the window first, then ask LaunchServices
+// to open us again and die while that request is still in flight: the system then starts a new process.
+bool visionOSRelaunching = false;
+
+static void relaunchOnVisionOS(void) {
+    [lcUserDefaults synchronize];
+    [[NSClassFromString(@"LSApplicationWorkspace") defaultWorkspace] openApplicationWithBundleID:lcMainBundle.bundleIdentifier];
+    raise(SIGKILL);
+}
+
++ (BOOL)launchToGuestAppOnVisionOS {
+    UIApplication *application = [NSClassFromString(@"UIApplication") sharedApplication];
+    visionOSRelaunching = true;
+    if (!application.connectedScenes.count) {
+        relaunchOnVisionOS();
+        return YES;
+    }
+    [NSNotificationCenter.defaultCenter addObserverForName:@"UISceneDidDisconnectNotification" object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification) {
+        if (!application.connectedScenes.count) {
+            relaunchOnVisionOS();
+        }
+    }];
+    for (UISceneSession *session in application.openSessions) {
+        [application requestSceneSessionDestruction:session options:nil errorHandler:nil];
+    }
+    return YES;
+}
+
 + (BOOL)launchToGuestApp {
     NSString *urlScheme = nil;
     NSString *tsPath = [NSString stringWithFormat:@"%@/../_TrollStore", NSBundle.mainBundle.bundlePath];
@@ -136,6 +165,11 @@ extern NSBundle *lcMainBundle;
         }
     }
     if (!urlScheme) {
+        if (@available(iOS 26.1, *)) {
+            if (NSProcessInfo.processInfo.isiOSAppOnVision) {
+                return [self launchToGuestAppOnVisionOS];
+            }
+        }
         tries = 2;
         urlScheme = [NSString stringWithFormat:@"%@://livecontainer-relaunch", lcAppUrlScheme];
     }
