@@ -109,6 +109,41 @@ static uint64_t rnd64(uint64_t v, uint64_t r) {
     return (v + r) & ~r;
 }
 
+// Look for pointer-sized slots in CoreFoundation's writable segments holding value (or check addr if non-NULL)
+static void **scanCoreFoundationData(void *value, void **addr, int *count) {
+    Dl_info info;
+    if (!dladdr((void *)CFBundleGetMainBundle, &info)) return NULL;
+    const struct mach_header_64 *header = info.dli_fbase;
+    intptr_t slide = 0;
+    const struct load_command *command = (const struct load_command *)(header + 1);
+    for (uint32_t i = 0; i < header->ncmds; i++, command = (const void *)command + command->cmdsize) {
+        const struct segment_command_64 *segment = (const void *)command;
+        if (command->cmd == LC_SEGMENT_64 && !strcmp(segment->segname, SEG_TEXT)) {
+            slide = (intptr_t)header - segment->vmaddr;
+        }
+    }
+    void **found = NULL;
+    *count = 0;
+    command = (const struct load_command *)(header + 1);
+    for (uint32_t i = 0; i < header->ncmds; i++, command = (const void *)command + command->cmdsize) {
+        const struct segment_command_64 *segment = (const void *)command;
+        if (command->cmd != LC_SEGMENT_64 || !(segment->initprot & VM_PROT_WRITE)) continue;
+        void **start = (void **)(segment->vmaddr + slide);
+        void **end = (void **)(segment->vmaddr + slide + segment->vmsize);
+        if (addr) {
+            if (addr >= start && addr < end) return addr;
+            continue;
+        }
+        for (void **slot = start; slot < end; slot++) {
+            if (*slot == value) {
+                found = slot;
+                (*count)++;
+            }
+        }
+    }
+    return found;
+}
+
 void overwriteMainCFBundle(void) {
     // Overwrite CFBundleGetMainBundle
     uint32_t *pc = (uint32_t *)CFBundleGetMainBundle;
@@ -145,6 +180,14 @@ void overwriteMainCFBundle(void) {
 #if !TARGET_OS_SIMULATOR
     }
 #endif
+    // The instruction pattern differs on some OS builds (e.g. visionOS), so make sure the slot
+    // really holds the main bundle, otherwise find it in CoreFoundation's writable data.
+    int count;
+    void *mainBundle = (void *)CFBundleGetMainBundle();
+    if (!mainBundleAddr || !scanCoreFoundationData(NULL, mainBundleAddr, &count) || *mainBundleAddr != mainBundle) {
+        mainBundleAddr = scanCoreFoundationData(mainBundle, NULL, &count);
+        if (count != 1) mainBundleAddr = NULL;
+    }
     assert(mainBundleAddr != NULL);
     *mainBundleAddr = (__bridge void *)NSBundle.mainBundle._cfBundle;
 }
