@@ -151,6 +151,10 @@
 - (NSUInteger) _IS_platformToIFPlatform {
     return 4;
 }
+// visionOS: -[ISRecordResourceProvider iconStackResourcesAllowed] calls _RSBundleRecordIsXROSNative, which asks the record for its dyld platform
+- (NSUInteger)platform {
+    return 2; // PLATFORM_IOS
+}
 - (id)appClipMetadata {
     return nil;
 }
