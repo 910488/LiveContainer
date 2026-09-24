@@ -299,6 +299,15 @@ extern bool visionOSRelaunching;
 // visionOS never gives a window to the process it starts for [LCSharedUtils launchToGuestApp], because the
 // scene of the killed process is already gone, and it keeps this process alive once the user closes the
 // guest app's window, which would bring the next launch of LiveContainer back to this guest app.
+// Closing a window on visionOS only moves its scene to the background instead of disconnecting it.
+static bool hasForegroundScene(void) {
+    UIApplication *application = [NSClassFromString(@"UIApplication") sharedApplication];
+    for (UIScene *scene in application.connectedScenes) {
+        if (scene.activationState != UISceneActivationStateBackground) return true;
+    }
+    return false;
+}
+
 static void setUpGuestWindowHandlingOnVisionOS(void) {
     if (@available(iOS 26.1, *)) {
         if (!NSProcessInfo.processInfo.isiOSAppOnVision) return;
@@ -306,12 +315,16 @@ static void setUpGuestWindowHandlingOnVisionOS(void) {
         return;
     }
 
-    [NSNotificationCenter.defaultCenter addObserverForName:@"UISceneDidDisconnectNotification" object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification) {
-        UIApplication *application = [NSClassFromString(@"UIApplication") sharedApplication];
-        if (!visionOSRelaunching && !application.connectedScenes.count) {
-            exit(0);
-        }
-    }];
+    void (^exitWithoutWindow)(NSNotification *) = ^(NSNotification *notification) {
+        // let the guest app handle entering the background first
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), dispatch_get_main_queue(), ^{
+            if (!visionOSRelaunching && !hasForegroundScene()) {
+                exit(0);
+            }
+        });
+    };
+    [NSNotificationCenter.defaultCenter addObserverForName:@"UISceneDidDisconnectNotification" object:nil queue:NSOperationQueue.mainQueue usingBlock:exitWithoutWindow];
+    [NSNotificationCenter.defaultCenter addObserverForName:@"UISceneDidEnterBackgroundNotification" object:nil queue:NSOperationQueue.mainQueue usingBlock:exitWithoutWindow];
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         dispatch_async(dispatch_get_main_queue(), ^{
