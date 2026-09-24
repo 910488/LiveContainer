@@ -14,11 +14,14 @@ extern NSBundle *lcMainBundle;
     static NSString* ans = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-#if !TARGET_OS_SIMULATOR
+#if TARGET_OS_SIMULATOR
+        // Unsigned simulator builds have no team entitlement or keychain access group.
+        ans = @"SIMULATOR";
+#else
         void* taskSelf = SecTaskCreateFromSelf(NULL);
         CFErrorRef error = NULL;
         CFTypeRef cfans = SecTaskCopyValueForEntitlement(taskSelf, CFSTR("com.apple.developer.team-identifier"), &error);
-        if(CFGetTypeID(cfans) == CFStringGetTypeID()) {
+        if(cfans && CFGetTypeID(cfans) == CFStringGetTypeID()) {
             ans = (__bridge NSString*)cfans;
         }
         CFRelease(taskSelf);

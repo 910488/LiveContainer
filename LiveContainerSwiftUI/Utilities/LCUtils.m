@@ -20,6 +20,31 @@
 @end
 
 @implementation LCUtils
++ (NSURL *)archiveVisionLauncherKitWithDisplayName:(NSString *)displayName launchURL:(NSString *)launchURL iconData:(NSData *)iconData error:(NSError **)error {
+    NSFileManager *manager = NSFileManager.defaultManager;
+    NSURL *work = [manager.temporaryDirectory URLByAppendingPathComponent:[NSString stringWithFormat:@"VisionLauncherKit-%@", NSUUID.UUID.UUIDString]];
+    NSURL *contents = [work URLByAppendingPathComponent:@"LauncherKit"];
+    if (![manager createDirectoryAtURL:contents withIntermediateDirectories:YES attributes:nil error:error]) return nil;
+    @try {
+        NSDictionary *manifest = @{@"displayName": displayName, @"launchURL": launchURL};
+        NSData *json = [NSJSONSerialization dataWithJSONObject:manifest options:NSJSONWritingPrettyPrinted error:error];
+        if (!json) return nil;
+        if (![json writeToURL:[contents URLByAppendingPathComponent:@"Launcher.json"] options:NSDataWritingAtomic error:error]) return nil;
+        if (![iconData writeToURL:[contents URLByAppendingPathComponent:@"Icon.png"] options:NSDataWritingAtomic error:error]) return nil;
+        dlopen("/System/Library/PrivateFrameworks/PassKitCore.framework/PassKitCore", RTLD_GLOBAL);
+        NSData *archive = [[NSClassFromString(@"PKZipArchiver") new] zippedDataForURL:contents];
+        if (!archive) {
+            if (error) *error = [NSError errorWithDomain:@"VisionLauncherKit" code:1 userInfo:@{NSLocalizedDescriptionKey: @"Could not package launcher kit"}];
+            return nil;
+        }
+        NSURL *output = [manager.temporaryDirectory URLByAppendingPathComponent:[NSString stringWithFormat:@"VisionLauncher-%@.zip", NSUUID.UUID.UUIDString]];
+        if (![archive writeToURL:output options:NSDataWritingAtomic error:error]) return nil;
+        return output;
+    } @finally {
+        [manager removeItemAtURL:work error:nil];
+    }
+}
+
 #pragma mark Certificate & password
 
 + (NSData *)certificateData {
