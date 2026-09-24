@@ -31,8 +31,6 @@ struct LCAppBanner : View {
     
     @State private var saveIconExporterShow = false
     @State private var saveIconFile : ImageDocument?
-    @State private var launcherKitURL: URL?
-    @State private var showLauncherKitShareSheet = false
     
     @State private var errorShow = false
     @State private var errorInfo = ""
@@ -197,11 +195,6 @@ struct LCAppBanner : View {
             onCompletion: { result in
             
         })
-        .sheet(isPresented: $showLauncherKitShareSheet) {
-            if let launcherKitURL {
-                ActivityViewController(activityItems: [launcherKitURL])
-            }
-        }
         .betterContextMenu(menuProvider: makeContextMenu)
         .alert("lc.appBanner.confirmUninstallTitle".loc, isPresented: $appRemovalAlert.show) {
             Button(role: .destructive) {
@@ -283,9 +276,6 @@ struct LCAppBanner : View {
 
         // Submenu: Add to Home Screen
         let subMenuActions = [
-            UIAction(title: "Export visionOS launcher kit", image: UIImage(systemName: "cube.transparent")) { _ in
-                Task { await exportVisionLauncherKit() }
-            },
             UIAction(title: "lc.appBanner.copyLaunchUrl".loc, image: UIImage(systemName: "link")) { _ in
                 copyLaunchUrl()
             },
@@ -405,28 +395,6 @@ struct LCAppBanner : View {
             UIPasteboard.general.string = "livecontainer://livecontainer-launch?bundle-name=\(appInfo.relativeBundlePath!)"
         }
         
-    }
-
-    func exportVisionLauncherKit() async {
-        guard let style = await delegate.promptForGeneratedIconStyle(),
-              let icon = appInfo.generateLiveContainerWrappedIcon(with: style),
-              let iconData = icon.pngData(),
-              let bundleName = appInfo.relativeBundlePath else { return }
-        var components = URLComponents()
-        components.scheme = LCUtils.appUrlScheme() ?? "livecontainer"
-        components.host = "livecontainer-launch"
-        components.queryItems = [URLQueryItem(name: "bundle-name", value: bundleName)]
-        if let folder = model.uiSelectedContainer?.folderName {
-            components.queryItems?.append(URLQueryItem(name: "container-folder-name", value: folder))
-        }
-        guard let launchURL = components.url else { return }
-        do {
-            launcherKitURL = try LCUtils.archiveVisionLauncherKit(withDisplayName: appInfo.displayName(), launchURL: launchURL.absoluteString, iconData: iconData)
-            showLauncherKitShareSheet = true
-        } catch {
-            errorInfo = error.localizedDescription
-            errorShow = true
-        }
     }
     
     func openSafariViewToCreateAppClip() async {

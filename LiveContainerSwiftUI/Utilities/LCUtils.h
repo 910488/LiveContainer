@@ -27,7 +27,6 @@ int dyld_get_program_sdk_version(void);
 
 + (void)validateJITLessSetupWithCompletionHandler:(void (^)(BOOL success, NSError *error))completionHandler;
 + (NSURL *)archiveIPAWithBundleName:(NSString*)newBundleName includingExtraInfoDict:(NSDictionary *)extraInfoDict error:(NSError **)error;
-+ (NSURL *)archiveVisionLauncherKitWithDisplayName:(NSString *)displayName launchURL:(NSString *)launchURL iconData:(NSData *)iconData error:(NSError **)error;
 + (NSData *)certificateData;
 + (void)launchMultitaskGuestApp:(NSString *)displayName completionHandler:(void (^)(NSNumber *pid, NSError *error))completionHandler API_AVAILABLE(ios(16.0));
 
